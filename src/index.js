@@ -12,6 +12,7 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
   try {
     const sig = req.get('X-Up-Authenticity-Signature');
     if (!verifySignature(req.body, sig)) {
+      console.warn('[Up] invalid signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
@@ -23,19 +24,31 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
     }
 
     const eventType = payload?.data?.attributes?.eventType;
+    const txIdLog = payload?.data?.relationships?.transaction?.data?.id;
+    console.log(`[Up] event=${eventType || 'unknown'} tx=${txIdLog || '-'}`);
+    // Acknowledge PING quickly with 200 (Up treats non-200 as failure)
+    if (eventType === 'PING') {
+      console.log('[Up] ping acknowledged');
+      return res.status(200).json({ ok: true, eventType: 'PING' });
+    }
+
+    // Ignore other non-transaction events but still return 200
+    if (!['TRANSACTION_CREATED', 'TRANSACTION_SETTLED', 'TRANSACTION_DELETED'].includes(eventType)) {
+      console.log(`[Up] ignored event: ${eventType}`);
+      return res.status(200).json({ ok: true, ignored: true, eventType });
+    }
+
     const txRel = payload?.data?.relationships?.transaction?.data;
     const txId = txRel?.id;
 
     if (!txId) {
+      console.warn('[Up] missing transaction id in payload');
       return res.status(400).json({ error: 'Missing transaction id in payload' });
-    }
-
-    if (!['TRANSACTION_CREATED', 'TRANSACTION_SETTLED', 'TRANSACTION_DELETED'].includes(eventType)) {
-      return res.status(204).end();
     }
 
     if (eventType === 'TRANSACTION_DELETED') {
       // Nothing to do right now. Actual API could delete by id if we mapped, but we only know Up id.
+      console.log(`[Up] deleted event tx=${txId}`);
       return res.status(200).json({ ok: true, skipped: 'deleted-event' });
     }
 
@@ -53,7 +66,10 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
       });
     }
 
+    console.log(`[Up] importing tx=${mapped.imported_id} upAccount=${upAccountId} -> actualAccount=${actualAccountId}`);
+
     const result = await importTransactionsToActual(actualAccountId, [mapped]);
+    console.log(`[Up] import complete tx=${mapped.imported_id}`);
 
     return res.status(200).json({ ok: true, result, mapped, upAccountId, actualAccountId });
   } catch (err) {

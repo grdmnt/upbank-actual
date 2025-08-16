@@ -38,6 +38,7 @@ async function listAccounts() {
 
 async function importTransactionsToActual(accountId, transactions) {
   await init();
+  console.log(`[Actual] importing ${transactions.length} transactions to account ${accountId}`);
   return await actual.importTransactions(accountId, transactions);
 }
 

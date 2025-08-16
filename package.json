@@ -12,7 +12,11 @@
     "start": "node src/index.js",
     "dev": "nodemon --watch src --ext js --exec node src/index.js",
     "list-accounts": "node scripts/list-accounts.js",
-    "list-up-accounts": "node scripts/list-up-accounts.js"
+    "list-up-accounts": "node scripts/list-up-accounts.js",
+    "create-up-webhook": "node scripts/create-up-webhook.js",
+    "list-up-webhooks": "node scripts/list-up-webhooks.js",
+    "delete-up-webhook": "node scripts/delete-up-webhook.js",
+    "ping-up-webhook": "node scripts/ping-up-webhook.js"
   },
   "dependencies": {
     "@actual-app/api": "^25.7.1",
