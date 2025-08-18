@@ -29,8 +29,23 @@ function verifySignature(rawBodyBuffer, receivedSignatureHex) {
 }
 
 async function fetchTransaction(id) {
-  const res = await up.get(`/transactions/${encodeURIComponent(id)}`);
-  return res.data;
+  try {
+    const res = await up.get(`/transactions/${encodeURIComponent(id)}`);
+    return res.data;
+  } catch (error) {
+    if (error.response?.status === 401) {
+      console.error('[Up API] 401 Unauthorized - check UP_API_TOKEN validity and permissions');
+      console.error('[Up API] Token present:', !!config.UP_API_TOKEN);
+      console.error('[Up API] Token length:', config.UP_API_TOKEN?.length || 0);
+    } else if (error.response?.status === 404) {
+      console.error(`[Up API] Transaction ${id} not found (404)`);
+    } else if (error.response?.status === 429) {
+      console.error('[Up API] Rate limited (429) - too many requests');
+    } else {
+      console.error(`[Up API] Request failed:`, error.response?.status, error.response?.data || error.message);
+    }
+    throw error;
+  }
 }
 
 async function fetchAccounts() {
