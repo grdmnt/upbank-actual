@@ -13,6 +13,7 @@
     "dev": "nodemon --watch src --ext js --exec node src/index.js",
     "list-accounts": "node scripts/list-accounts.js",
     "list-lm-assets": "node scripts/list-lm-assets.js",
+    "migrate-actual-to-lm": "node scripts/migrate-actual-to-lunchmoney.js",
     "list-up-accounts": "node scripts/list-up-accounts.js",
     "create-up-webhook": "node scripts/create-up-webhook.js",
     "list-up-webhooks": "node scripts/list-up-webhooks.js",
