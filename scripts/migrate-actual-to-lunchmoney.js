@@ -23,6 +23,7 @@ const actual = require('../src/actual');
 const lm = require('../src/lunchmoney');
 
 const DRY_RUN = /^(1|true|yes)$/i.test(process.env.DRY_RUN || 'false');
+const REPAIR_PAYEES = /^(1|true|yes)$/i.test(process.env.REPAIR_PAYEES || 'false');
 const INCLUDE_CLOSED = /^(1|true|yes)$/i.test(process.env.INCLUDE_CLOSED || 'false');
 const START_DATE = process.env.START_DATE || '2000-01-01';
 const END_DATE = process.env.END_DATE || new Date().toISOString().slice(0, 10);
@@ -131,6 +132,12 @@ function buildLmTransaction(tx, ctx) {
   };
 }
 
+// Actual stores the payee id on tx.payee (not tx.payee_id). Fall back to the
+// raw imported payee text when no payee record matches.
+function resolvePayee(tx, payeeName) {
+  return payeeName.get(tx.payee) || tx.imported_payee || undefined;
+}
+
 async function migrateTransactions({ accounts, assetMap }, categoryMap) {
   const payees = await actual.getPayees(); // {id, name, ...}
   const payeeName = new Map(payees.map((p) => [p.id, p.name]));
@@ -153,7 +160,7 @@ async function migrateTransactions({ accounts, assetMap }, categoryMap) {
         for (const sub of tx.subtransactions) {
           out.push(buildLmTransaction(
             { ...sub, date: tx.date, cleared: tx.cleared },
-            { assetId, payeeName: payeeName.get(tx.payee_id), categoryId: categoryMap.get(sub.category) }
+            { assetId, payeeName: resolvePayee(tx, payeeName), categoryId: categoryMap.get(sub.category) }
           ));
         }
         continue;
@@ -167,7 +174,7 @@ async function migrateTransactions({ accounts, assetMap }, categoryMap) {
 
       out.push(buildLmTransaction(tx, {
         assetId,
-        payeeName: payeeName.get(tx.payee_id),
+        payeeName: resolvePayee(tx, payeeName),
         categoryId: categoryMap.get(tx.category),
       }));
     }
@@ -269,8 +276,85 @@ async function migrateTransfers(transferPairs) {
   log(`Transfers: ${transferPairs.size} pair(s); ${grouped} grouped, ${skipped} skipped.`);
 }
 
+/**
+ * Repair pass: backfill payees on already-migrated Lunch Money transactions.
+ * Re-derives external_id -> payee from Actual (same id scheme as the insert) and
+ * PUT-updates any Lunch Money transaction whose payee is missing/different.
+ */
+async function repairPayees() {
+  const accounts = await actual.listAccounts();
+  const payees = await actual.getPayees();
+  const payeeName = new Map(payees.map((p) => [p.id, p.name]));
+
+  // external_id (Actual id) -> intended payee, matching how inserts were keyed
+  const wanted = new Map();
+  for (const acc of accounts) {
+    const txns = await actual.getTransactions(acc.id, START_DATE, END_DATE);
+    for (const tx of txns) {
+      if (tx.is_child) continue;
+      if (tx.is_parent && Array.isArray(tx.subtransactions) && tx.subtransactions.length) {
+        for (const sub of tx.subtransactions) wanted.set(sub.id, resolvePayee(tx, payeeName));
+        continue;
+      }
+      wanted.set(tx.id, resolvePayee(tx, payeeName));
+    }
+  }
+
+  // Collect LM transactions over the range, descending into grouped children
+  const lmTxns = [];
+  const collect = (t) => {
+    if (t.external_id) lmTxns.push(t);
+    if (t.is_group && Array.isArray(t.children)) t.children.forEach((c) => c.external_id && lmTxns.push(c));
+  };
+  (await lm.listTransactions({ start_date: START_DATE, end_date: END_DATE })).forEach(collect);
+
+  let updated = 0;
+  let skipped = 0;
+  for (const t of lmTxns) {
+    const payee = wanted.get(t.external_id);
+    if (!payee || norm(t.payee) === norm(payee)) { skipped++; continue; }
+
+    let done = false;
+    for (let attempt = 0; attempt < 5 && !done; attempt++) {
+      try {
+        await lm.updateTransaction(t.id, { payee: String(payee).slice(0, 140) });
+        updated++;
+        done = true;
+      } catch (e) {
+        if (e?.response?.status === 429) {
+          const retryAfter = parseInt(e.response.headers?.['retry-after'] || '0', 10);
+          const wait = retryAfter > 0 ? retryAfter * 1000 : 1000 * Math.pow(2, attempt);
+          log(`    429 rate-limited; waiting ${wait}ms (attempt ${attempt + 1}/5)`);
+          await sleep(wait);
+          continue;
+        }
+        skipped++;
+        console.error(`    update failed for ${t.external_id}:`, e?.response?.data?.error || e.message);
+        done = true;
+      }
+    }
+    if (updated % 50 === 0 && updated) log(`    ...${updated} payees updated`);
+    await sleep(GROUP_DELAY_MS);
+  }
+  log(`Repair payees: ${lmTxns.length} LM txns scanned; ${updated} updated, ${skipped} unchanged.`);
+}
+
 (async () => {
   requireConfig();
+  if (REPAIR_PAYEES) {
+    log('Repairing payees on migrated Lunch Money transactions');
+    log(`Date range: ${START_DATE} .. ${END_DATE}`);
+    try {
+      await repairPayees();
+      log('Done.');
+    } catch (e) {
+      console.error('Repair failed:', e?.response?.data || e);
+      process.exitCode = 1;
+    } finally {
+      await actual.shutdown();
+    }
+    return;
+  }
   log(`Migrating Actual -> Lunch Money${DRY_RUN ? ' (DRY RUN)' : ''}`);
   log(`Date range: ${START_DATE} .. ${END_DATE}; include closed: ${INCLUDE_CLOSED}; currency: ${CURRENCY || 'default'}`);
   try {

@@ -51,6 +51,15 @@ async function listTransactions(params = {}) {
 }
 
 /**
+ * Update a single transaction. `fields` is the partial transaction object
+ * (e.g. { payee: 'Woolworths' }). Returns { updated: true }.
+ */
+async function updateTransaction(id, fields) {
+  const res = await lm.put(`/transactions/${id}`, { transaction: fields });
+  return res.data;
+}
+
+/**
  * Group transactions into a single transaction group (Lunch Money's transfer model).
  * `transactions` is an array of Lunch Money transaction ids. Returns the new group id.
  */
@@ -99,6 +108,7 @@ module.exports = {
   listCategories,
   createCategory,
   listTransactions,
+  updateTransaction,
   createTransactionGroup,
   insertTransactions,
 };
