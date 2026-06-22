@@ -12,6 +12,7 @@
     "start": "node src/index.js",
     "dev": "nodemon --watch src --ext js --exec node src/index.js",
     "list-accounts": "node scripts/list-accounts.js",
+    "list-lm-assets": "node scripts/list-lm-assets.js",
     "list-up-accounts": "node scripts/list-up-accounts.js",
     "create-up-webhook": "node scripts/create-up-webhook.js",
     "list-up-webhooks": "node scripts/list-up-webhooks.js",
@@ -19,7 +20,7 @@
     "ping-up-webhook": "node scripts/ping-up-webhook.js"
   },
   "dependencies": {
-    "@actual-app/api": "^25.7.1",
+    "@actual-app/api": "^26.6.0",
     "axios": "^1.7.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2"

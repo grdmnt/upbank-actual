@@ -1,3 +1,4 @@
+const fs = require('fs');
 const actual = require('@actual-app/api');
 const { config } = require('./config');
 
@@ -6,6 +7,7 @@ let initPromise = null;
 async function init() {
   if (initPromise) return initPromise;
   initPromise = (async () => {
+    fs.mkdirSync(config.ACTUAL_DATA_DIR, { recursive: true });
     await actual.init({
       dataDir: config.ACTUAL_DATA_DIR,
       serverURL: config.ACTUAL_SERVER_URL,
@@ -36,6 +38,26 @@ async function listAccounts() {
   return await actual.getAccounts();
 }
 
+async function getCategoryGroups() {
+  await init();
+  return await actual.getCategoryGroups();
+}
+
+async function getCategories() {
+  await init();
+  return await actual.getCategories();
+}
+
+async function getPayees() {
+  await init();
+  return await actual.getPayees();
+}
+
+async function getTransactions(accountId, startDate, endDate) {
+  await init();
+  return await actual.getTransactions(accountId, startDate, endDate);
+}
+
 async function importTransactionsToActual(accountId, transactions) {
   await init();
   console.log(`[Actual] importing ${transactions.length} transactions to account ${accountId}`);
@@ -46,6 +68,10 @@ module.exports = {
   init,
   shutdown,
   listAccounts,
+  getCategoryGroups,
+  getCategories,
+  getPayees,
+  getTransactions,
   importTransactionsToActual,
   utils: actual.utils,
 };

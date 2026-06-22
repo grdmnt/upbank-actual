@@ -28,12 +28,22 @@ const config = {
   ACTUAL_BUDGET_ENCRYPTION_PASSWORD: process.env.ACTUAL_BUDGET_ENCRYPTION_PASSWORD || '',
   ACTUAL_DATA_DIR: process.env.ACTUAL_DATA_DIR || path.resolve(process.cwd(), '.actual-data'),
 
+  // Lunch Money
+  LUNCHMONEY_TOKEN: process.env.LUNCHMONEY_TOKEN || '',
+
   // Mapping
   ACCOUNT_MAP: parseJsonEnv('ACCOUNT_MAP', {}),
+  // Map Up account IDs to Lunch Money asset IDs (JSON object)
+  LM_ASSET_MAP: parseJsonEnv('LM_ASSET_MAP', {}),
 
   // Import options
   AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.AMOUNT_FLIP || 'false'),
+  LM_AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.LM_AMOUNT_FLIP || 'false'),
 };
+
+// Which destinations are enabled (a token/config present)
+config.ACTUAL_ENABLED = !!(config.ACTUAL_SERVER_URL && config.ACTUAL_PASSWORD && config.ACTUAL_BUDGET_ID);
+config.LUNCHMONEY_ENABLED = !!config.LUNCHMONEY_TOKEN;
 
 function validateActualConfig() {
   const missing = [];
@@ -63,10 +73,24 @@ function validateUpConfig() {
   }
 }
 
-function validateConfig() {
-  // Full validation for running the server
-  validateActualConfig();
-  validateUpConfig();
+function validateLunchMoneyConfig() {
+  if (!config.LUNCHMONEY_TOKEN) {
+    console.error('Missing Lunch Money env var: LUNCHMONEY_TOKEN');
+    process.exit(1);
+  }
 }
 
-module.exports = { config, validateConfig, validateActualConfig, validateUpConfig };
+function validateConfig() {
+  // Full validation for running the server
+  validateUpConfig();
+
+  if (!config.ACTUAL_ENABLED && !config.LUNCHMONEY_ENABLED) {
+    console.error('No destination configured. Set Actual (ACTUAL_SERVER_URL/ACTUAL_PASSWORD/ACTUAL_BUDGET_ID) and/or Lunch Money (LUNCHMONEY_TOKEN).');
+    process.exit(1);
+  }
+
+  if (config.ACTUAL_ENABLED) validateActualConfig();
+  if (config.LUNCHMONEY_ENABLED) validateLunchMoneyConfig();
+}
+
+module.exports = { config, validateConfig, validateActualConfig, validateUpConfig, validateLunchMoneyConfig };

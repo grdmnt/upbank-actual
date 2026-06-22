@@ -87,9 +87,34 @@ function mapUpToActualTransaction(upTx) {
   return { mapped, upAccountId };
 }
 
+function mapUpToLunchMoney(upTx) {
+  const { id, attributes: attrs, relationships } = upTx.data;
+  const upAccountId = relationships && relationships.account && relationships.account.data && relationships.account.data.id;
+
+  const cents = attrs.amount && typeof attrs.amount.valueInBaseUnits === 'number'
+    ? attrs.amount.valueInBaseUnits
+    : parseInt(attrs.amount.valueInBaseUnits, 10);
+  // Lunch Money wants decimal dollars; signed (negative = expense) with debit_as_negative
+  let amount = cents / 100;
+  if (config.LM_AMOUNT_FLIP) amount = -amount;
+
+  const mapped = {
+    external_id: id,
+    date: pickDate(attrs),
+    amount: amount.toFixed(2),
+    payee: attrs.description ? String(attrs.description).slice(0, 140) : undefined,
+    notes: attrs.message ? String(attrs.message).slice(0, 350) : undefined,
+    currency: attrs.amount && attrs.amount.currencyCode ? String(attrs.amount.currencyCode).toLowerCase() : undefined,
+    status: attrs.status === 'SETTLED' ? 'cleared' : 'uncleared',
+  };
+
+  return { mapped, upAccountId };
+}
+
 module.exports = {
   verifySignature,
   fetchTransaction,
   fetchAccounts,
   mapUpToActualTransaction,
+  mapUpToLunchMoney,
 };

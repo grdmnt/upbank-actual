@@ -1,6 +1,6 @@
 # Up Bank → Actual Budget Webhook Bridge
 
-This small Node.js service receives Up Bank webhooks and imports the related transactions into your self‑hosted Actual Budget (e.g., on PikaPod) using `@actual-app/api`.
+This small Node.js service receives Up Bank webhooks and imports the related transactions into your budgeting tool. It supports two destinations — self‑hosted **Actual Budget** (via `@actual-app/api`) and **Lunch Money** (via its REST API) — and writes to whichever you configure (one or both).
 
 ## Features
 
@@ -65,6 +65,31 @@ Use the printed ids to fill `ACCOUNT_MAP` in `.env`, e.g.:
 ACCOUNT_MAP={"482d7d76-ee91...":"c179c3f4-28a6-..."}
 ```
 
+## Lunch Money (optional destination)
+
+To also (or instead) push transactions into Lunch Money:
+
+- `LUNCHMONEY_TOKEN`: access token from https://my.lunchmoney.app/developers
+- `LM_ASSET_MAP`: JSON mapping from Up account id → Lunch Money **asset id** (numbers)
+- Optional `LM_AMOUNT_FLIP=true` if expenses land as credits
+
+List your Lunch Money assets to get their ids:
+
+```bash
+npm run list-lm-assets
+```
+
+Then fill `LM_ASSET_MAP`, e.g.:
+
+```env
+LM_ASSET_MAP={"482d7d76-ee91...":56789}
+```
+
+Notes:
+- Dedupe is automatic per asset via `external_id` (set to the Up transaction id), so retries/duplicate webhooks won't double‑import.
+- Amounts are sent as decimal dollars with `debit_as_negative: true` (spend is negative). `currency` comes from Up; `status` is `cleared` when Up `status` is `SETTLED`.
+- At least one destination (Actual or Lunch Money) must be configured or startup fails.
+
 ## Run
 
 - Dev mode (auto‑reload):
@@ -84,6 +109,7 @@ Health check: `GET /health`
 Helper endpoints:
 
 - `GET /actual/accounts` – list Actual accounts
+- `GET /lunchmoney/assets` – list Lunch Money assets (if configured)
 - `GET /up/accounts` – list Up accounts
 
 ## Helper scripts
@@ -143,7 +169,9 @@ Notes for ngrok Free:
 - `src/config.js` – env loading & validation
 - `src/up.js` – Up API client, signature verification, mapping
 - `src/actual.js` – Actual API client & import
+- `src/lunchmoney.js` – Lunch Money API client & insert
 - `scripts/list-accounts.js` – list Actual accounts
+- `scripts/list-lm-assets.js` – list Lunch Money assets
 - `scripts/list-up-accounts.js` – list Up accounts
 
 ## Troubleshooting

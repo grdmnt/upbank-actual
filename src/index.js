@@ -1,7 +1,8 @@
 const express = require('express');
 const { config, validateConfig } = require('./config');
-const { verifySignature, fetchTransaction, mapUpToActualTransaction, fetchAccounts } = require('./up');
+const { verifySignature, fetchTransaction, mapUpToActualTransaction, mapUpToLunchMoney, fetchAccounts } = require('./up');
 const { importTransactionsToActual, listAccounts, shutdown } = require('./actual');
+const lunchmoney = require('./lunchmoney');
 
 validateConfig();
 
@@ -53,25 +54,46 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
     }
 
     const upTx = await fetchTransaction(txId);
-    const { mapped, upAccountId } = mapUpToActualTransaction(upTx);
+    const results = {};
+    let anyDelivered = false;
+    let anyUnmapped = false;
 
-    const actualAccountId = config.ACCOUNT_MAP[upAccountId];
-    if (!actualAccountId) {
-      console.error('No mapping for Up account', upAccountId);
-      return res.status(202).json({
-        ok: true,
-        message: 'Up account is not mapped to an Actual account. Add to ACCOUNT_MAP and retry.',
-        upAccountId,
-        example: { [upAccountId]: '<actual-account-id>' },
-      });
+    // --- Actual ---
+    if (config.ACTUAL_ENABLED) {
+      const { mapped, upAccountId } = mapUpToActualTransaction(upTx);
+      const actualAccountId = config.ACCOUNT_MAP[upAccountId];
+      if (!actualAccountId) {
+        console.error('[Actual] no mapping for Up account', upAccountId);
+        anyUnmapped = true;
+        results.actual = { skipped: 'unmapped-account', upAccountId, hint: 'Add to ACCOUNT_MAP' };
+      } else {
+        console.log(`[Actual] importing tx=${mapped.imported_id} upAccount=${upAccountId} -> account=${actualAccountId}`);
+        results.actual = await importTransactionsToActual(actualAccountId, [mapped]);
+        anyDelivered = true;
+      }
     }
 
-    console.log(`[Up] importing tx=${mapped.imported_id} upAccount=${upAccountId} -> actualAccount=${actualAccountId}`);
+    // --- Lunch Money ---
+    if (config.LUNCHMONEY_ENABLED) {
+      const { mapped, upAccountId } = mapUpToLunchMoney(upTx);
+      const assetId = config.LM_ASSET_MAP[upAccountId];
+      if (!assetId) {
+        console.error('[Lunch Money] no mapping for Up account', upAccountId);
+        anyUnmapped = true;
+        results.lunchmoney = { skipped: 'unmapped-account', upAccountId, hint: 'Add to LM_ASSET_MAP' };
+      } else {
+        mapped.asset_id = assetId;
+        console.log(`[Lunch Money] inserting tx=${mapped.external_id} upAccount=${upAccountId} -> asset=${assetId}`);
+        results.lunchmoney = await lunchmoney.insertTransactions([mapped]);
+        anyDelivered = true;
+      }
+    }
 
-    const result = await importTransactionsToActual(actualAccountId, [mapped]);
-    console.log(`[Up] import complete tx=${mapped.imported_id}`);
+    console.log(`[Up] processed tx=${txId} delivered=${anyDelivered}`);
 
-    return res.status(200).json({ ok: true, result, mapped, upAccountId, actualAccountId });
+    // 202 if nothing landed because account was unmapped everywhere
+    const status = anyDelivered ? 200 : (anyUnmapped ? 202 : 200);
+    return res.status(status).json({ ok: true, delivered: anyDelivered, results });
   } catch (err) {
     console.error('Webhook error:', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -92,6 +114,19 @@ app.get('/actual/accounts', async (req, res) => {
   } catch (e) {
     console.error('List accounts error:', e);
     res.status(500).json({ error: 'Failed to list accounts' });
+  }
+});
+
+app.get('/lunchmoney/assets', async (req, res) => {
+  if (!config.LUNCHMONEY_ENABLED) {
+    return res.status(404).json({ error: 'Lunch Money not configured' });
+  }
+  try {
+    const assets = await lunchmoney.listAssets();
+    res.json({ assets });
+  } catch (e) {
+    console.error('List Lunch Money assets error:', e?.response?.data || e);
+    res.status(500).json({ error: 'Failed to list Lunch Money assets' });
   }
 });
 
