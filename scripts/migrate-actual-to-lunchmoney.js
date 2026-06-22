@@ -281,22 +281,37 @@ async function migrateTransfers(transferPairs) {
  * Re-derives external_id -> payee from Actual (same id scheme as the insert) and
  * PUT-updates any Lunch Money transaction whose payee is missing/different.
  */
-async function repairPayees() {
+async function repairFields() {
   const accounts = await actual.listAccounts();
   const payees = await actual.getPayees();
   const payeeName = new Map(payees.map((p) => [p.id, p.name]));
 
-  // external_id (Actual id) -> intended payee, matching how inserts were keyed
+  // Actual category id -> Lunch Money category id, matched by name
+  const actualCats = await actual.getCategories();
+  const lmCats = await lm.listCategories();
+  const lmCatByName = new Map(lmCats.filter((c) => !c.is_group).map((c) => [norm(c.name), c.id]));
+  const catMap = new Map();
+  for (const c of actualCats) {
+    const lmId = lmCatByName.get(norm(c.name));
+    if (lmId) catMap.set(c.id, lmId);
+  }
+
+  // external_id (Actual id) -> intended { payee, category_id, notes }
   const wanted = new Map();
+  const entry = (id, payeeSrc, categorySrc, notes) => wanted.set(id, {
+    payee: resolvePayee(payeeSrc, payeeName),
+    category_id: catMap.get(categorySrc) || null,
+    notes: notes || null,
+  });
   for (const acc of accounts) {
     const txns = await actual.getTransactions(acc.id, START_DATE, END_DATE);
     for (const tx of txns) {
       if (tx.is_child) continue;
       if (tx.is_parent && Array.isArray(tx.subtransactions) && tx.subtransactions.length) {
-        for (const sub of tx.subtransactions) wanted.set(sub.id, resolvePayee(tx, payeeName));
+        for (const sub of tx.subtransactions) entry(sub.id, tx, sub.category, sub.notes || tx.notes);
         continue;
       }
-      wanted.set(tx.id, resolvePayee(tx, payeeName));
+      entry(tx.id, tx, tx.category, tx.notes);
     }
   }
 
@@ -311,13 +326,19 @@ async function repairPayees() {
   let updated = 0;
   let skipped = 0;
   for (const t of lmTxns) {
-    const payee = wanted.get(t.external_id);
-    if (!payee || norm(t.payee) === norm(payee)) { skipped++; continue; }
+    const w = wanted.get(t.external_id);
+    if (!w) { skipped++; continue; }
+
+    const patch = {};
+    if (w.payee && norm(t.payee) !== norm(w.payee)) patch.payee = String(w.payee).slice(0, 140);
+    if (w.category_id && t.category_id !== w.category_id) patch.category_id = w.category_id;
+    if (w.notes && (t.notes || '') !== w.notes) patch.notes = String(w.notes).slice(0, 350);
+    if (Object.keys(patch).length === 0) { skipped++; continue; }
 
     let done = false;
     for (let attempt = 0; attempt < 5 && !done; attempt++) {
       try {
-        await lm.updateTransaction(t.id, { payee: String(payee).slice(0, 140) });
+        await lm.updateTransaction(t.id, patch);
         updated++;
         done = true;
       } catch (e) {
@@ -333,19 +354,19 @@ async function repairPayees() {
         done = true;
       }
     }
-    if (updated % 50 === 0 && updated) log(`    ...${updated} payees updated`);
+    if (updated % 50 === 0 && updated) log(`    ...${updated} updated`);
     await sleep(GROUP_DELAY_MS);
   }
-  log(`Repair payees: ${lmTxns.length} LM txns scanned; ${updated} updated, ${skipped} unchanged.`);
+  log(`Repair: ${lmTxns.length} LM txns scanned; ${updated} updated, ${skipped} unchanged.`);
 }
 
 (async () => {
   requireConfig();
   if (REPAIR_PAYEES) {
-    log('Repairing payees on migrated Lunch Money transactions');
+    log('Repairing payee/category/notes on migrated Lunch Money transactions');
     log(`Date range: ${START_DATE} .. ${END_DATE}`);
     try {
-      await repairPayees();
+      await repairFields();
       log('Done.');
     } catch (e) {
       console.error('Repair failed:', e?.response?.data || e);
