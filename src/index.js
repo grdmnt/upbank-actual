@@ -6,6 +6,56 @@ const lunchmoney = require('./lunchmoney');
 
 validateConfig();
 
+// Shift a YYYY-MM-DD string by n days (transfer legs can straddle midnight)
+function addDays(dateStr, n) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Link the two legs of an Up cover/transfer into a Lunch Money transaction group.
+ * Up sends each leg as a separate webhook with no counterpart-transaction id, so we
+ * match the other leg by counterpart asset + |amount| + date window. Whichever leg's
+ * webhook arrives second finds its partner and groups them; idempotent if re-delivered.
+ */
+async function linkLmTransfer({ mapped, upAccountId, transferAccountId }) {
+  const ownAssetId = config.LM_ASSET_MAP[upAccountId];
+  const counterpartAssetId = config.LM_ASSET_MAP[transferAccountId];
+  if (!counterpartAssetId) {
+    console.warn(`[Lunch Money] transfer counterpart account ${transferAccountId} not in LM_ASSET_MAP; leg imported unlinked`);
+    return { linked: false, reason: 'counterpart-unmapped', transferAccountId };
+  }
+
+  const dateFrom = addDays(mapped.date, -1);
+  const dateTo = addDays(mapped.date, 1);
+  const amountAbs = Math.abs(parseFloat(mapped.amount));
+
+  const self = await lunchmoney.findTransaction({
+    assetId: ownAssetId, dateFrom, dateTo, externalId: mapped.external_id,
+  });
+  if (self && self.group_id) return { linked: true, alreadyGrouped: true, groupId: self.group_id };
+
+  const counterpart = await lunchmoney.findTransaction({
+    assetId: counterpartAssetId, dateFrom, dateTo, amountAbs,
+    ungroupedOnly: true, excludeExternalId: mapped.external_id,
+  });
+
+  if (!self || !counterpart) {
+    // The other leg hasn't been imported yet; its webhook will pair them.
+    return { linked: false, reason: 'counterpart-not-found-yet' };
+  }
+
+  await lunchmoney.createTransactionGroup({
+    date: mapped.date,
+    payee: 'Transfer',
+    notes: mapped.notes || 'Up transfer',
+    transactions: [self.id, counterpart.id],
+  });
+  console.log(`[Lunch Money] grouped transfer legs ${self.id} + ${counterpart.id}`);
+  return { linked: true, groupedIds: [self.id, counterpart.id] };
+}
+
 const app = express();
 
 // Webhook route: must use raw body to verify signature
@@ -75,7 +125,7 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
 
     // --- Lunch Money ---
     if (config.LUNCHMONEY_ENABLED) {
-      const { mapped, upAccountId } = mapUpToLunchMoney(upTx);
+      const { mapped, upAccountId, transferAccountId, isTransfer } = mapUpToLunchMoney(upTx);
       const assetId = config.LM_ASSET_MAP[upAccountId];
       if (!assetId) {
         console.error('[Lunch Money] no mapping for Up account', upAccountId);
@@ -83,9 +133,15 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
         results.lunchmoney = { skipped: 'unmapped-account', upAccountId, hint: 'Add to LM_ASSET_MAP' };
       } else {
         mapped.asset_id = assetId;
-        console.log(`[Lunch Money] inserting tx=${mapped.external_id} upAccount=${upAccountId} -> asset=${assetId}`);
-        results.lunchmoney = await lunchmoney.insertTransactions([mapped]);
+        console.log(`[Lunch Money] inserting tx=${mapped.external_id} upAccount=${upAccountId} -> asset=${assetId}${isTransfer ? ' (transfer)' : ''}`);
+        const insert = await lunchmoney.insertTransactions([mapped]);
+        results.lunchmoney = insert;
         anyDelivered = true;
+
+        // Cover/transfer: link the two legs into a Lunch Money transaction group
+        if (isTransfer) {
+          results.transfer = await linkLmTransfer({ mapped, upAccountId, transferAccountId });
+        }
       }
     }
 

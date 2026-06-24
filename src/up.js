@@ -90,6 +90,8 @@ function mapUpToActualTransaction(upTx) {
 function mapUpToLunchMoney(upTx) {
   const { id, attributes: attrs, relationships } = upTx.data;
   const upAccountId = relationships && relationships.account && relationships.account.data && relationships.account.data.id;
+  // Populated only for inter-account transfers/covers: the counterpart Up account id
+  const transferAccountId = relationships && relationships.transferAccount && relationships.transferAccount.data && relationships.transferAccount.data.id;
 
   const cents = attrs.amount && typeof attrs.amount.valueInBaseUnits === 'number'
     ? attrs.amount.valueInBaseUnits
@@ -108,7 +110,7 @@ function mapUpToLunchMoney(upTx) {
     status: attrs.status === 'SETTLED' ? 'cleared' : 'uncleared',
   };
 
-  return { mapped, upAccountId };
+  return { mapped, upAccountId, transferAccountId, isTransfer: !!transferAccountId };
 }
 
 module.exports = {

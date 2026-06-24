@@ -60,6 +60,25 @@ async function updateTransaction(id, fields) {
 }
 
 /**
+ * Find a single transaction on an asset within a date window. Filters:
+ *   externalId  - exact external_id match (returns that transaction)
+ *   amountAbs   - |amount| match (number), e.g. to find a transfer counterpart
+ *   ungroupedOnly - skip transactions already in a group
+ *   excludeExternalId - ignore this external_id (so a leg never matches itself)
+ * Returns the first match or null.
+ */
+async function findTransaction({ assetId, dateFrom, dateTo, externalId, amountAbs, ungroupedOnly, excludeExternalId }) {
+  const txns = await listTransactions({ asset_id: assetId, start_date: dateFrom, end_date: dateTo });
+  return txns.find((t) => {
+    if (externalId && t.external_id !== externalId) return false;
+    if (excludeExternalId && t.external_id === excludeExternalId) return false;
+    if (ungroupedOnly && t.group_id) return false;
+    if (amountAbs != null && Math.round(Math.abs(parseFloat(t.amount)) * 100) !== Math.round(amountAbs * 100)) return false;
+    return true;
+  }) || null;
+}
+
+/**
  * Group transactions into a single transaction group (Lunch Money's transfer model).
  * `transactions` is an array of Lunch Money transaction ids. Returns the new group id.
  */
@@ -108,6 +127,7 @@ module.exports = {
   listCategories,
   createCategory,
   listTransactions,
+  findTransaction,
   updateTransaction,
   createTransactionGroup,
   insertTransactions,
