@@ -1,60 +1,9 @@
 const express = require('express');
 const { config, validateConfig } = require('./config');
-const { verifySignature, fetchTransaction, mapUpToActualTransaction, mapUpToLunchMoney, fetchAccounts } = require('./up');
+const { verifySignature, fetchTransaction, mapUpToActualTransaction, fetchAccounts } = require('./up');
 const { importTransactionsToActual, listAccounts, shutdown } = require('./actual');
-const lunchmoney = require('./lunchmoney');
 
 validateConfig();
-
-// Shift a YYYY-MM-DD string by n days (transfer legs can straddle midnight)
-function addDays(dateStr, n) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * Link the two legs of an Up cover/transfer into a Lunch Money transaction group.
- * Up sends each leg as a separate webhook with no counterpart-transaction id, so we
- * match the other leg by counterpart asset + |amount| + date window. Whichever leg's
- * webhook arrives second finds its partner and groups them; idempotent if re-delivered.
- */
-async function linkLmTransfer({ mapped, upAccountId, transferAccountId }) {
-  const ownAssetId = config.LM_ASSET_MAP[upAccountId];
-  const counterpartAssetId = config.LM_ASSET_MAP[transferAccountId];
-  if (!counterpartAssetId) {
-    console.warn(`[Lunch Money] transfer counterpart account ${transferAccountId} not in LM_ASSET_MAP; leg imported unlinked`);
-    return { linked: false, reason: 'counterpart-unmapped', transferAccountId };
-  }
-
-  const dateFrom = addDays(mapped.date, -1);
-  const dateTo = addDays(mapped.date, 1);
-  const amountAbs = Math.abs(parseFloat(mapped.amount));
-
-  const self = await lunchmoney.findTransaction({
-    assetId: ownAssetId, dateFrom, dateTo, externalId: mapped.external_id,
-  });
-  if (self && self.group_id) return { linked: true, alreadyGrouped: true, groupId: self.group_id };
-
-  const counterpart = await lunchmoney.findTransaction({
-    assetId: counterpartAssetId, dateFrom, dateTo, amountAbs,
-    ungroupedOnly: true, excludeExternalId: mapped.external_id,
-  });
-
-  if (!self || !counterpart) {
-    // The other leg hasn't been imported yet; its webhook will pair them.
-    return { linked: false, reason: 'counterpart-not-found-yet' };
-  }
-
-  await lunchmoney.createTransactionGroup({
-    date: mapped.date,
-    payee: 'Transfer',
-    notes: mapped.notes || 'Up transfer',
-    transactions: [self.id, counterpart.id],
-  });
-  console.log(`[Lunch Money] grouped transfer legs ${self.id} + ${counterpart.id}`);
-  return { linked: true, groupedIds: [self.id, counterpart.id] };
-}
 
 const app = express();
 
@@ -104,52 +53,24 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
     }
 
     const upTx = await fetchTransaction(txId);
-    const results = {};
-    let anyDelivered = false;
-    let anyUnmapped = false;
+    const { mapped, upAccountId } = mapUpToActualTransaction(upTx);
+    const actualAccountId = config.ACCOUNT_MAP[upAccountId];
 
-    // --- Actual ---
-    if (config.ACTUAL_ENABLED) {
-      const { mapped, upAccountId } = mapUpToActualTransaction(upTx);
-      const actualAccountId = config.ACCOUNT_MAP[upAccountId];
-      if (!actualAccountId) {
-        console.error('[Actual] no mapping for Up account', upAccountId);
-        anyUnmapped = true;
-        results.actual = { skipped: 'unmapped-account', upAccountId, hint: 'Add to ACCOUNT_MAP' };
-      } else {
-        console.log(`[Actual] importing tx=${mapped.imported_id} upAccount=${upAccountId} -> account=${actualAccountId}`);
-        results.actual = await importTransactionsToActual(actualAccountId, [mapped]);
-        anyDelivered = true;
-      }
+    if (!actualAccountId) {
+      console.error('[Actual] no mapping for Up account', upAccountId);
+      console.log(`[Up] processed tx=${txId} delivered=false`);
+      return res.status(202).json({
+        ok: true,
+        delivered: false,
+        result: { skipped: 'unmapped-account', upAccountId, hint: 'Add to ACCOUNT_MAP' },
+      });
     }
 
-    // --- Lunch Money ---
-    if (config.LUNCHMONEY_ENABLED) {
-      const { mapped, upAccountId, transferAccountId, isTransfer } = mapUpToLunchMoney(upTx);
-      const assetId = config.LM_ASSET_MAP[upAccountId];
-      if (!assetId) {
-        console.error('[Lunch Money] no mapping for Up account', upAccountId);
-        anyUnmapped = true;
-        results.lunchmoney = { skipped: 'unmapped-account', upAccountId, hint: 'Add to LM_ASSET_MAP' };
-      } else {
-        mapped.asset_id = assetId;
-        console.log(`[Lunch Money] inserting tx=${mapped.external_id} upAccount=${upAccountId} -> asset=${assetId}${isTransfer ? ' (transfer)' : ''}`);
-        const insert = await lunchmoney.insertTransactions([mapped]);
-        results.lunchmoney = insert;
-        anyDelivered = true;
+    console.log(`[Actual] importing tx=${mapped.imported_id} upAccount=${upAccountId} -> account=${actualAccountId}`);
+    const result = await importTransactionsToActual(actualAccountId, [mapped]);
+    console.log(`[Up] processed tx=${txId} delivered=true`);
 
-        // Cover/transfer: link the two legs into a Lunch Money transaction group
-        if (isTransfer) {
-          results.transfer = await linkLmTransfer({ mapped, upAccountId, transferAccountId });
-        }
-      }
-    }
-
-    console.log(`[Up] processed tx=${txId} delivered=${anyDelivered}`);
-
-    // 202 if nothing landed because account was unmapped everywhere
-    const status = anyDelivered ? 200 : (anyUnmapped ? 202 : 200);
-    return res.status(status).json({ ok: true, delivered: anyDelivered, results });
+    return res.status(200).json({ ok: true, delivered: true, result });
   } catch (err) {
     console.error('Webhook error:', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -170,19 +91,6 @@ app.get('/actual/accounts', async (req, res) => {
   } catch (e) {
     console.error('List accounts error:', e);
     res.status(500).json({ error: 'Failed to list accounts' });
-  }
-});
-
-app.get('/lunchmoney/assets', async (req, res) => {
-  if (!config.LUNCHMONEY_ENABLED) {
-    return res.status(404).json({ error: 'Lunch Money not configured' });
-  }
-  try {
-    const assets = await lunchmoney.listAssets();
-    res.json({ assets });
-  } catch (e) {
-    console.error('List Lunch Money assets error:', e?.response?.data || e);
-    res.status(500).json({ error: 'Failed to list Lunch Money assets' });
   }
 });
 

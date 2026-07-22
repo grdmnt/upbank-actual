@@ -1,6 +1,6 @@
 # Up Bank → Actual Budget Webhook Bridge
 
-This small Node.js service receives Up Bank webhooks and imports the related transactions into your budgeting tool. It supports two destinations — self‑hosted **Actual Budget** (via `@actual-app/api`) and **Lunch Money** (via its REST API) — and writes to whichever you configure (one or both).
+This small Node.js service receives Up Bank webhooks and imports the related transactions into self-hosted **Actual Budget** (via `@actual-app/api`).
 
 ## Features
 
@@ -65,47 +65,6 @@ Use the printed ids to fill `ACCOUNT_MAP` in `.env`, e.g.:
 ACCOUNT_MAP={"482d7d76-ee91...":"c179c3f4-28a6-..."}
 ```
 
-## Lunch Money (optional destination)
-
-To also (or instead) push transactions into Lunch Money:
-
-- `LUNCHMONEY_TOKEN`: access token from https://my.lunchmoney.app/developers
-- `LM_ASSET_MAP`: JSON mapping from Up account id → Lunch Money **asset id** (numbers)
-- Optional `LM_AMOUNT_FLIP=true` if expenses land as credits
-
-List your Lunch Money assets to get their ids:
-
-```bash
-npm run list-lm-assets
-```
-
-Then fill `LM_ASSET_MAP`, e.g.:
-
-```env
-LM_ASSET_MAP={"482d7d76-ee91...":56789}
-```
-
-Notes:
-- Dedupe is automatic per asset via `external_id` (set to the Up transaction id), so retries/duplicate webhooks won't double‑import.
-- Amounts are sent as decimal dollars with `debit_as_negative: true` (spend is negative). `currency` comes from Up; `status` is `cleared` when Up `status` is `SETTLED`.
-- At least one destination (Actual or Lunch Money) must be configured or startup fails.
-
-### Transfers / covers between Up accounts
-
-An Up "cover" (moving money between your Up accounts, e.g. Spending ↔ a Saver or 2Up) is a transfer: Up creates **two** transactions (one per account, equal and opposite) and fires **two** webhooks. Up marks each leg with `relationships.transferAccount` (the counterpart account) but gives no link to the counterpart transaction.
-
-To handle these in Lunch Money:
-
-1. **Map every Up account**, not just Spending — otherwise one leg of each cover hits an unmapped account and is skipped. Generate the full map:
-   ```bash
-   npm run sync-up-lm           # creates a LM asset per Up account, prints LM_ASSET_MAP
-   DRY_RUN=true npm run sync-up-lm   # preview without creating
-   ```
-   Paste the printed `LM_ASSET_MAP` into your env.
-2. With both accounts mapped, each leg imports to its asset and the webhook **links the pair into a Lunch Money transaction group** (LM's transfer model). Legs are matched by counterpart asset + amount + date window; whichever webhook arrives second creates the group. Idempotent on re‑delivery.
-
-Note: linking is Lunch Money only. The Actual path imports both legs as plain transactions.
-
 ## Run
 
 - Dev mode (auto‑reload):
@@ -125,7 +84,6 @@ Health check: `GET /health`
 Helper endpoints:
 
 - `GET /actual/accounts` – list Actual accounts
-- `GET /lunchmoney/assets` – list Lunch Money assets (if configured)
 - `GET /up/accounts` – list Up accounts
 
 ## Helper scripts
@@ -185,9 +143,7 @@ Notes for ngrok Free:
 - `src/config.js` – env loading & validation
 - `src/up.js` – Up API client, signature verification, mapping
 - `src/actual.js` – Actual API client & import
-- `src/lunchmoney.js` – Lunch Money API client & insert
 - `scripts/list-accounts.js` – list Actual accounts
-- `scripts/list-lm-assets.js` – list Lunch Money assets
 - `scripts/list-up-accounts.js` – list Up accounts
 
 ## Troubleshooting
