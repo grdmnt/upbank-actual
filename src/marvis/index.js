@@ -5,6 +5,10 @@ const { openStore } = require('../store');
 const { createBot } = require('./bot');
 const { createPendingStore } = require('./pending');
 const { createFinanceModule } = require('./modules/finance');
+const { createRepairModule } = require('./modules/repair');
+const { createRepair } = require('../repair');
+const up = require('../up');
+const { handleUpTransaction } = require('../importer');
 
 const bot = createBot({ token: config.TELEGRAM_BOT_TOKEN, chatId: config.TELEGRAM_CHAT_ID });
 const store = openStore(config.MARVIS_DB_PATH);
@@ -19,6 +23,8 @@ async function init() {
   const accountNames = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
   finance = createFinanceModule({ actual, config, pending, send: bot.send, accountNames });
   bot.register(finance);
+  const repair = createRepair({ up, actual, config, handle: (upInfo) => handleUpTransaction(upInfo), notify: afterImport });
+  bot.register(createRepairModule({ repair, send: bot.send, config }));
   await bot.start();
 }
 

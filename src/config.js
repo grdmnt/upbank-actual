@@ -47,6 +47,8 @@ const config = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
   // SQLite file for questions and the event log. Put it on a volume in production.
+  // /repair scans Up from this date: the day the pre-cover importer went live
+  REPAIR_SINCE: process.env.REPAIR_SINCE || '2026-07-22',
   MARVIS_DB_PATH: process.env.MARVIS_DB_PATH || path.resolve(process.cwd(), 'marvis.db'),
 
   // Import options

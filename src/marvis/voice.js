@@ -57,6 +57,25 @@ const voice = {
     (pending ? ' (/pending)' : '') +
     (at ? `\n<i>${esc(at)}</i>` : ''),
   nothingPending: () => 'Nothing awaits your judgement. A rare and pleasant state.',
+
+  repairScanning: (since) => `Scanning Up since ${since} and comparing with the ledger. A moment.`,
+  repairNothing: (p) => `Scanned ${p.scanned} transactions since ${p.since}. Nothing to repair.`,
+  repairPlan: (p) =>
+    `<b>Repair plan</b> (${p.scanned} scanned since ${p.since})\n` +
+    table([
+      ['Delete raw legs', String(p.counts['delete'] || 0)],
+      ['Delete and replay', String(p.counts['delete+replay'] || 0)],
+      ['Replay missing', String(p.counts['replay'] || 0)],
+      ['Leave alone', String(p.counts['skip'] || 0)],
+    ]) +
+    '\n\nBalances stay as they are; only placement, payee and category change. Covers I cannot settle will come to you as questions. Take an export in Actual first if you want a belt with the braces.',
+  repairCancelled: () => 'Cancelled. Nothing touched.',
+  repairDone: (s) =>
+    `<b>Repair done.</b> Deleted ${s.deleted}, replayed ${s.replayed}.\n` +
+    table(Object.entries(s.outcomes).map(([k, v]) => [k, String(v)])) +
+    (s.errors.length ? `\n\n<b>${s.errors.length} errors</b>\n<code>${esc(s.errors.slice(0, 5).map((e) => `${e.step} ${e.id}: ${e.message}`).join('\n'))}</code>` : ''),
+  applyButton: () => 'Apply',
+  cancelButton: () => 'Cancel',
   failed: () => 'That did not work. Check the logs.',
 };
 

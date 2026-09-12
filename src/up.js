@@ -60,6 +60,18 @@ async function fetchAccounts() {
   return data;
 }
 
+/** Every transaction on an Up account since a YYYY-MM-DD date (AEST), oldest first. */
+async function fetchTransactionsSince(accountId, since) {
+  const data = [];
+  let url = `/accounts/${encodeURIComponent(accountId)}/transactions?page[size]=100&filter[since]=${encodeURIComponent(`${since}T00:00:00+10:00`)}`;
+  while (url) {
+    const res = await up.get(url);
+    data.push(...(res.data?.data || []));
+    url = res.data?.links?.next || null;
+  }
+  return data.sort((a, b) => (a.attributes.createdAt < b.attributes.createdAt ? -1 : 1));
+}
+
 function pickDate(attrs) {
   const ts = attrs.settledAt || attrs.createdAt;
   if (!ts) return null;
@@ -107,5 +119,6 @@ module.exports = {
   verifySignature,
   fetchTransaction,
   fetchAccounts,
+  fetchTransactionsSince,
   mapUpToActualTransaction,
 };
