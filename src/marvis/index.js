@@ -1,13 +1,15 @@
 /** Wire MARVIS to the importer's dependencies. One place to add modules. */
-const path = require('path');
 const { config } = require('../config');
 const actual = require('../actual');
+const { openStore } = require('../store');
 const { createBot } = require('./bot');
 const { createPendingStore } = require('./pending');
 const { createFinanceModule } = require('./modules/finance');
 
 const bot = createBot({ token: config.TELEGRAM_BOT_TOKEN, chatId: config.TELEGRAM_CHAT_ID });
-const pending = createPendingStore(path.join(config.ACTUAL_DATA_DIR, 'marvis-pending.json'));
+const store = openStore(config.MARVIS_DB_PATH);
+const pending = createPendingStore(store);
+console.log(`[MARVIS] store ${store.path}`);
 
 let finance = null;
 
@@ -20,8 +22,13 @@ async function init() {
   await bot.start();
 }
 
-/** Safe to call from the webhook: never throws. */
+/** Safe to call from the webhook: never throws. Logs every outcome, asks when needed. */
 async function afterImport(result, upInfo) {
+  try {
+    store.events.log(upInfo && upInfo.mapped && upInfo.mapped.imported_id, result);
+  } catch (err) {
+    console.error('[MARVIS] event log failed:', err);
+  }
   if (!finance) return;
   try {
     await finance.afterImport(result, upInfo);
@@ -30,4 +37,9 @@ async function afterImport(result, upInfo) {
   }
 }
 
-module.exports = { init, afterImport, stop: () => bot.stop() };
+async function stop() {
+  await bot.stop();
+  store.close();
+}
+
+module.exports = { init, afterImport, stop, store };

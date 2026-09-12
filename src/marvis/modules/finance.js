@@ -87,7 +87,7 @@ function createFinanceModule({ actual, config, pending, send, accountNames = {} 
     if (!record) return voice.stale();
 
     if (choice === 'keep') {
-      pending.remove(nonce);
+      pending.resolve(nonce, 'keep');
       return voice.resolvedKeep();
     }
 
@@ -107,7 +107,7 @@ function createFinanceModule({ actual, config, pending, send, accountNames = {} 
       await actual.updateTransactionFields(chosen.id, { account: record.potAccountId });
     }
 
-    pending.remove(nonce);
+    pending.resolve(nonce, `picked:${chosen.id}`);
     return voice.resolvedPick(chosen);
   }
 

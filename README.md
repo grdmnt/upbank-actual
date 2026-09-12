@@ -149,7 +149,7 @@ Up records a cover as three transactions: the purchase on Spending, `Cover from 
 
 Optional. When a cover cannot be settled by rules alone, MARVIS (Monty's Assistant for Routine, Very Important Stuff) sends a Telegram message with one button per candidate purchase. Tapping applies the answer to Actual: the chosen purchase moves onto the pot, a wrong guess moves back, a fallback transfer is deleted. Nothing else is automated and no AI is involved. `/now` shows on-budget balances and open questions, `/pending` re-sends them.
 
-Setup: create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`, message the bot and run `/whoami`, set `TELEGRAM_CHAT_ID`. The bot long-polls, so no inbound URL is needed. Open questions persist in `ACTUAL_DATA_DIR/marvis-pending.json` across restarts.
+Setup: create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`, message the bot and run `/whoami`, set `TELEGRAM_CHAT_ID`. The bot long-polls, so no inbound URL is needed. State lives in a SQLite file at `MARVIS_DB_PATH`: every question asked (resolved ones kept as an audit trail) and an `events` table with the outcome of every webhook. Mount a volume in production so it survives deploys; put `ACTUAL_DATA_DIR` on the same volume and Actual's cache survives too.
 
 Re-delivered webhooks are safe: every import is looked up by `imported_id` across all accounts first, and a cover whose purchase already sits on the pot is recognised and skipped. `npm run classify-up` prints what the importer would do for every Up transaction since `SINCE` without writing anything.
 
@@ -168,7 +168,8 @@ Re-delivered webhooks are safe: every import is looked up by `imported_id` acros
 - `src/covers.js` – pure classification of an Up transaction (import / drop / absorb / transfer)
 - `src/importer.js` – executes the classification against Actual, shared by webhook and scripts
 - `scripts/classify-up-transactions.js` – read-only dry run of the classifier against Up
-- `src/marvis/` – Telegram bot: `bot.js` transport and chat guard, `modules/finance.js` cover questions and answers, `pending.js` open-question store, `voice.js` every user-facing string
+- `src/store.js` – SQLite store: questions and the webhook event log
+- `src/marvis/` – Telegram bot: `bot.js` transport and chat guard, `modules/finance.js` cover questions and answers, `pending.js` open-question adapter over the store, `voice.js` every user-facing string
 - `scripts/list-accounts.js` – list Actual accounts
 - `scripts/list-up-accounts.js` – list Up accounts
 

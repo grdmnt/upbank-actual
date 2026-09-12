@@ -46,6 +46,8 @@ const config = {
   // MARVIS on Telegram. Both unset = notifications disabled.
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
+  // SQLite file for questions and the event log. Put it on a volume in production.
+  MARVIS_DB_PATH: process.env.MARVIS_DB_PATH || path.resolve(process.cwd(), 'marvis.db'),
 
   // Import options
   AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.AMOUNT_FLIP || 'false'),

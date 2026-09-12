@@ -23,6 +23,7 @@
   "dependencies": {
     "@actual-app/api": "^26.9.0",
     "axios": "^1.7.3",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "grammy": "^1.46.0"
