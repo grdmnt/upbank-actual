@@ -1,7 +1,8 @@
 const express = require('express');
 const { config, validateConfig } = require('./config');
 const { verifySignature, fetchTransaction, mapUpToActualTransaction, fetchAccounts } = require('./up');
-const { importTransactionsToActual, listAccounts, shutdown } = require('./actual');
+const { listAccounts, shutdown } = require('./actual');
+const { handleUpTransaction } = require('./importer');
 
 validateConfig();
 
@@ -53,24 +54,18 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
     }
 
     const upTx = await fetchTransaction(txId);
-    const { mapped, upAccountId } = mapUpToActualTransaction(upTx);
-    const actualAccountId = config.ACCOUNT_MAP[upAccountId];
+    const upInfo = mapUpToActualTransaction(upTx);
+    const result = await handleUpTransaction(upInfo);
 
-    if (!actualAccountId) {
-      console.error('[Actual] no mapping for Up account', upAccountId);
-      console.log(`[Up] processed tx=${txId} delivered=false`);
-      return res.status(202).json({
-        ok: true,
-        delivered: false,
-        result: { skipped: 'unmapped-account', upAccountId, hint: 'Add to ACCOUNT_MAP' },
-      });
-    }
+    console.log(
+      `[Up] processed tx=${txId} action=${result.action} delivered=${result.delivered}` +
+        (result.reason ? ` reason=${result.reason}` : '') +
+        (result.status ? ` status=${result.status}` : '')
+    );
 
-    console.log(`[Actual] importing tx=${mapped.imported_id} upAccount=${upAccountId} -> account=${actualAccountId}`);
-    const result = await importTransactionsToActual(actualAccountId, [mapped]);
-    console.log(`[Up] processed tx=${txId} delivered=true`);
-
-    return res.status(200).json({ ok: true, delivered: true, result });
+    // 202 when nothing landed because the account is unmapped; a deliberate DROP is a 200
+    const status = result.action === 'SKIP_UNMAPPED' ? 202 : 200;
+    return res.status(status).json({ ok: true, delivered: result.delivered, result });
   } catch (err) {
     console.error('Webhook error:', err);
     return res.status(500).json({ error: 'Internal error' });

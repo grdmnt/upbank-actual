@@ -67,9 +67,16 @@ function pickDate(attrs) {
   return String(ts).slice(0, 10);
 }
 
+function rel(relationships, name) {
+  return relationships && relationships[name] && relationships[name].data && relationships[name].data.id;
+}
+
 function mapUpToActualTransaction(upTx) {
   const { id, attributes: attrs, relationships } = upTx.data;
-  const upAccountId = relationships && relationships.account && relationships.account.data && relationships.account.data.id;
+  const upAccountId = rel(relationships, 'account');
+  // Populated only for inter-account transfers/covers: the counterpart Up account id.
+  // For a cover paid by the other 2Up owner this points at an account we cannot read.
+  const transferAccountId = rel(relationships, 'transferAccount');
 
   const mapped = {
     imported_id: id,
@@ -84,7 +91,16 @@ function mapUpToActualTransaction(upTx) {
   // Optional flip if user's Actual expects opposite sign
   if (config.AMOUNT_FLIP) mapped.amount = -mapped.amount;
 
-  return { mapped, upAccountId };
+  return {
+    mapped,
+    upAccountId,
+    transferAccountId,
+    description: attrs.description || '',
+    // Which 2Up owner performed it, e.g. "$grdmnt" or a partner's handle
+    performingCustomer: (attrs.performingCustomer && attrs.performingCustomer.displayName) || null,
+    createdAt: attrs.createdAt || null,
+    settledAt: attrs.settledAt || null,
+  };
 }
 
 module.exports = {

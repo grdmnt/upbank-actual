@@ -31,6 +31,18 @@ const config = {
   // Map Up account IDs to Actual account IDs (JSON object)
   ACCOUNT_MAP: parseJsonEnv('ACCOUNT_MAP', {}),
 
+  // Map a shared Up saver to the Actual category its spending belongs to. Used to
+  // categorise covers performed by the other 2Up owner, whose purchase we cannot see.
+  POT_CATEGORY_MAP: parseJsonEnv('POT_CATEGORY_MAP', {}),
+
+  // Payee used for those covers, and the note that flags them for manual review
+  FOREIGN_COVER_PAYEE: process.env.FOREIGN_COVER_PAYEE || 'Shane Cover',
+  FOREIGN_COVER_NOTE: process.env.FOREIGN_COVER_NOTE || '#update-payee',
+  // Note added when a cover could not be matched to a purchase, or matched ambiguously
+  CHECK_COVER_NOTE: process.env.CHECK_COVER_NOTE || '#check-cover',
+  // How many days back from a cover to look for the purchase it paid for
+  ABSORB_WINDOW_DAYS: parseInt(process.env.ABSORB_WINDOW_DAYS || '3', 10),
+
   // Import options
   AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.AMOUNT_FLIP || 'false'),
 };
