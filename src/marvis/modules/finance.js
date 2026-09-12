@@ -113,7 +113,11 @@ function createFinanceModule({ actual, config, pending, send, accountNames = {} 
 
   async function now() {
     const balances = await actual.getOnBudgetBalances();
-    return voice.now({ balances, pending: pending.size() });
+    const at = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+    return {
+      text: voice.now({ balances, pending: pending.size(), at }),
+      reply_markup: { inline_keyboard: [[{ text: voice.refreshButton(), callback_data: 'now:refresh' }]] },
+    };
   }
 
   /** Re-send every open question with fresh buttons. */
@@ -130,7 +134,17 @@ function createFinanceModule({ actual, config, pending, send, accountNames = {} 
     return null;
   }
 
-  return { afterImport, resolve, now, resendPending, callbackPrefix: 'cv:' };
+  return {
+    afterImport,
+    resolve,
+    now,
+    resendPending,
+    commands: {
+      now: { description: 'Balances and anything awaiting your judgement', handler: now },
+      pending: { description: 'Re-send open questions', handler: resendPending },
+    },
+    callbacks: { cv: resolve, now },
+  };
 }
 
 module.exports = { createFinanceModule, stripTag };

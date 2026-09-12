@@ -35,7 +35,7 @@ test('an ambiguous absorb asks with one button per candidate plus keep', async (
   await finance.afterImport(ambiguousResult, upInfo);
 
   assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /\$18\.00 from 2Up Groceries/);
+  assert.match(sent[0].text, /\$18\.00<\/b> from 2Up Groceries/);
   const rows = sent[0].extra.reply_markup.inline_keyboard;
   assert.equal(rows.length, 3);
   assert.match(rows[0][0].text, /Guzman y Gomez/);
@@ -126,10 +126,26 @@ test('plain imports and drops send nothing', async () => {
 test('/now reports balances and the pending count', async () => {
   const { finance, sent } = harness();
   await finance.afterImport(ambiguousResult, upInfo);
-  const text = await finance.now();
-  assert.match(text, /Up Bank: \$1,522\.59/);
-  assert.match(text, /judgement: 1/);
+  const { text, reply_markup } = await finance.now();
+  assert.match(text, /Up Bank +\$1,522\.59/);
+  assert.match(text, /judgement: <b>1<\/b>/);
+  assert.equal(reply_markup.inline_keyboard[0][0].callback_data, 'now:refresh');
   assert.equal(sent.length, 1);
+});
+
+test('payee names are HTML-escaped in messages', async () => {
+  const { finance, sent } = harness();
+  const nasty = { ...gyg, payee_name: 'Fish & Chips <Ryde>' };
+  await finance.afterImport({ ...ambiguousResult, candidates: [nasty, amazon] }, upInfo);
+  assert.match(sent[0].text, /Fish &amp; Chips &lt;Ryde&gt;/);
+  assert.equal(sent[0].extra.reply_markup.inline_keyboard[0][0].text, 'Fish & Chips <Ryde> · -$18.00 · 2026-08-18');
+});
+
+test('module exposes commands with descriptions and callback prefixes', () => {
+  const { finance } = harness();
+  assert.deepEqual(Object.keys(finance.commands), ['now', 'pending']);
+  assert.ok(finance.commands.now.description);
+  assert.deepEqual(Object.keys(finance.callbacks), ['cv', 'now']);
 });
 
 test('stripTag removes only the tag', () => {

@@ -16,9 +16,8 @@ async function init() {
   const accounts = await actual.listAccounts();
   const accountNames = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
   finance = createFinanceModule({ actual, config, pending, send: bot.send, accountNames });
-  finance.commands = { now: finance.now, pending: finance.resendPending };
   bot.register(finance);
-  bot.start();
+  await bot.start();
 }
 
 /** Safe to call from the webhook: never throws. */
