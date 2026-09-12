@@ -17,7 +17,8 @@
     "create-up-webhook": "node scripts/create-up-webhook.js",
     "list-up-webhooks": "node scripts/list-up-webhooks.js",
     "delete-up-webhook": "node scripts/delete-up-webhook.js",
-    "ping-up-webhook": "node scripts/ping-up-webhook.js"
+    "ping-up-webhook": "node scripts/ping-up-webhook.js",
+    "classify-up": "node scripts/classify-up-transactions.js"
   },
   "dependencies": {
     "@actual-app/api": "^26.6.0",

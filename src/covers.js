@@ -28,6 +28,7 @@ const ACTIONS = {
 
 const isCoverFrom = (d) => /^cover from /i.test(d);
 const isCoverTo = (d) => /^cover to /i.test(d);
+const isUndoCoverTo = (d) => /^undo cover to /i.test(d);
 
 /**
  * @param {object} tx - { description, amount, upAccountId, transferAccountId }
@@ -63,6 +64,12 @@ function classify(tx, accountMap) {
     if (other) return { action: ACTIONS.DROP, reason: 'cover-sibling' };
     // Counterpart is unreadable => the other 2Up owner spent from a shared pot.
     return { action: ACTIONS.IMPORT_FOREIGN_COVER, potAccountId: own, potUpAccountId: upAccountId };
+  }
+
+  // The other owner undid a cover: reverse it under the same payee and category so
+  // the pair nets to zero inside the pot's category instead of leaving an orphan.
+  if (isUndoCoverTo(d) && !other) {
+    return { action: ACTIONS.IMPORT_FOREIGN_COVER, reason: 'undo', potAccountId: own, potUpAccountId: upAccountId };
   }
 
   // Plain transfer to an account we do not track (e.g. partner funding a shared pot)

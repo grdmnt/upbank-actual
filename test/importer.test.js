@@ -16,7 +16,7 @@ const CONFIG = {
 };
 
 /** Records every write so tests can assert on what would hit Actual. */
-function fakeActual({ existing = null, candidates = [] } = {}) {
+function fakeActual({ existing = null, candidates = [], candidatesByAccount = null } = {}) {
   const calls = { imported: [], updated: [], transfers: [], candidateQueries: [] };
   return {
     calls,
@@ -35,6 +35,7 @@ function fakeActual({ existing = null, candidates = [] } = {}) {
     },
     async findCoverCandidates(query) {
       calls.candidateQueries.push(query);
+      if (candidatesByAccount) return candidatesByAccount[query.accountId] || [];
       return candidates;
     },
   };
@@ -225,4 +226,73 @@ test('an unmapped account reports rather than writing somewhere arbitrary', asyn
   assert.equal(res.action, 'SKIP_UNMAPPED');
   assert.equal(res.delivered, false);
   assert.deepEqual(actual.calls.imported, []);
+});
+
+test('two candidates: the one in the pot\'s category wins without a tag', async () => {
+  const actual = fakeActual({
+    candidates: [
+      { id: 'amazon', date: '2026-07-19', amount: -1800, notes: null, category: 'cat-groceries' },
+      { id: 'gyg', date: '2026-07-21', amount: -1800, notes: null, category: 'cat-eat-out' },
+    ],
+  });
+  const res = await handleUpTransaction(
+    upInfo('Cover from Groceries', 1800, 'spending', 'groceries'),
+    { actual, config: CONFIG }
+  );
+
+  assert.equal(res.ambiguous, false);
+  assert.deepEqual(actual.calls.updated, [{ id: 'amazon', fields: { account: 'pot-groceries' } }]);
+});
+
+test('two candidates in the pot\'s category: nearest wins and is still tagged', async () => {
+  const actual = fakeActual({
+    candidates: [
+      { id: 'older', date: '2026-07-19', amount: -1800, notes: null, category: 'cat-groceries' },
+      { id: 'newer', date: '2026-07-20', amount: -1800, notes: null, category: 'cat-groceries' },
+      { id: 'other', date: '2026-07-21', amount: -1800, notes: null, category: 'cat-eat-out' },
+    ],
+  });
+  const res = await handleUpTransaction(
+    upInfo('Cover from Groceries', 1800, 'spending', 'groceries'),
+    { actual, config: CONFIG }
+  );
+
+  assert.equal(res.ambiguous, true);
+  assert.deepEqual(actual.calls.updated, [
+    { id: 'newer', fields: { account: 'pot-groceries', notes: '#check-cover' } },
+  ]);
+});
+
+test('a re-delivered cover whose purchase already moved to the pot writes nothing', async () => {
+  const actual = fakeActual({
+    candidatesByAccount: {
+      upbank: [],
+      'pot-groceries': [{ id: 'purchase-1', date: '2026-07-20', amount: -4348 }],
+    },
+  });
+  const res = await handleUpTransaction(
+    upInfo('Cover from Groceries', 4348, 'spending', 'groceries'),
+    { actual, config: CONFIG }
+  );
+
+  assert.equal(res.status, 'already-absorbed');
+  assert.equal(res.purchaseId, 'purchase-1');
+  assert.deepEqual(actual.calls.updated, []);
+  assert.deepEqual(actual.calls.transfers, []);
+  assert.deepEqual(actual.calls.imported, []);
+});
+
+test("the other owner undoing a cover reverses it under the same payee and category", async () => {
+  const actual = fakeActual();
+  const res = await handleUpTransaction(
+    upInfo('Undo Cover to $partner', 3136, 'groceries', 'partner-spending'),
+    { actual, config: CONFIG }
+  );
+
+  assert.equal(res.action, 'IMPORT_FOREIGN_COVER');
+  const [{ account, transactions }] = actual.calls.imported;
+  assert.equal(account, 'pot-groceries');
+  assert.equal(transactions[0].amount, 3136);
+  assert.equal(transactions[0].payee_name, 'Shane Cover');
+  assert.equal(transactions[0].category, 'cat-groceries');
 });

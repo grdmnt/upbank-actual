@@ -8,6 +8,7 @@ This small Node.js service receives Up Bank webhooks and imports the related tra
 - __Fetches full transaction details__ from Up API on each event
 - __Imports into Actual__ using `importTransactions()` with `imported_id` set to the Up transaction id (dedupe-friendly)
 - __Account mapping__ from Up account → Actual account via `ACCOUNT_MAP`
+- __Covers and transfers__: a cover from a saver moves the purchase it paid for onto the saver's account; transfers between mapped accounts become real Actual transfers; the other 2Up owner's covers import with a fixed payee and the pot's category
 - Handles `TRANSACTION_CREATED` and `TRANSACTION_SETTLED` by importing/clearing; ignores `TRANSACTION_DELETED` (see Notes)
 - Acknowledges `PING` events with HTTP 200 (Up won’t retry)
 - Concise logging for each event (event type and transaction id)
@@ -131,10 +132,25 @@ Notes for ngrok Free:
 - Amounts use Up `valueInBaseUnits` (cents). If your sign convention differs, set `AMOUNT_FLIP=true`.
 - Cleared is set when Up `status` is `SETTLED`.
 
+### Covers
+
+Up records a cover as three transactions: the purchase on Spending, `Cover from <saver>` on Spending and `Cover to Spending` on the saver. `src/covers.js` classifies every transaction by resolving both its account and its `transferAccount` through `ACCOUNT_MAP`:
+
+| Situation | Action |
+| --- | --- |
+| Both ends map to the same Actual account (Spending, Rent, Allocated → Up Bank) | dropped, nets to zero |
+| `Cover from <pot>` on Spending | the purchase with the same amount within `ABSORB_WINDOW_DAYS` is moved onto the pot's account. Several matches: the one whose category matches `POT_CATEGORY_MAP` wins, otherwise the nearest and it is tagged `CHECK_COVER_NOTE`. No match: a transfer pot → Up Bank tagged `CHECK_COVER_NOTE` |
+| `Cover to Spending` on the pot | dropped, the Spending leg handles it |
+| `Cover to $partner` on a shared pot | imported on the pot as `FOREIGN_COVER_PAYEE` with the pot's category and `FOREIGN_COVER_NOTE`. An `Undo Cover to $partner` reverses it the same way |
+| Transfer between two mapped accounts | one real Actual transfer, from the outgoing leg |
+| Counterpart account unmapped | imported as-is |
+
+Re-delivered webhooks are safe: every import is looked up by `imported_id` across all accounts first, and a cover whose purchase already sits on the pot is recognised and skipped. `npm run classify-up` prints what the importer would do for every Up transaction since `SINCE` without writing anything.
+
 ## Notes & limitations
 
 - __Deletion__: `TRANSACTION_DELETED` is currently ignored. Actual’s API deletes by Actual transaction id, not the `imported_id`. Implementing deletion would require a search layer to look up transactions by `imported_id`.
-- __Transfers & categories__: We don’t set categories or handle transfers; your rules in Actual can categorize on import. Add logic if desired.
+- __Categories__: only covers by the other 2Up owner get a category (from `POT_CATEGORY_MAP`); everything else relies on your rules in Actual.
 - __TLS / certs__: If your Actual server uses custom CA, see `Self-Signed Https Certificates` in the Actual API docs and set `NODE_EXTRA_CA_CERTS`.
 
 ## File overview
@@ -142,7 +158,10 @@ Notes for ngrok Free:
 - `src/index.js` – Express server, webhook route, helper endpoints
 - `src/config.js` – env loading & validation
 - `src/up.js` – Up API client, signature verification, mapping
-- `src/actual.js` – Actual API client & import
+- `src/actual.js` – Actual API client, import, transfers, cover candidate search
+- `src/covers.js` – pure classification of an Up transaction (import / drop / absorb / transfer)
+- `src/importer.js` – executes the classification against Actual, shared by webhook and scripts
+- `scripts/classify-up-transactions.js` – read-only dry run of the classifier against Up
 - `scripts/list-accounts.js` – list Actual accounts
 - `scripts/list-up-accounts.js` – list Up accounts
 

@@ -41,7 +41,7 @@ const config = {
   // Note added when a cover could not be matched to a purchase, or matched ambiguously
   CHECK_COVER_NOTE: process.env.CHECK_COVER_NOTE || '#check-cover',
   // How many days back from a cover to look for the purchase it paid for
-  ABSORB_WINDOW_DAYS: parseInt(process.env.ABSORB_WINDOW_DAYS || '3', 10),
+  ABSORB_WINDOW_DAYS: parseInt(process.env.ABSORB_WINDOW_DAYS || '14', 10),
 
   // Import options
   AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.AMOUNT_FLIP || 'false'),

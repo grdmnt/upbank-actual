@@ -83,3 +83,20 @@ test('a missing description still classifies by account topology', () => {
     ACTIONS.DROP
   );
 });
+
+test('undo of a foreign cover is a foreign cover in reverse', () => {
+  const d = classify(
+    { description: 'Undo Cover to $partner', amount: 3136, upAccountId: 'groceries', transferAccountId: 'partner-spending' },
+    MAP
+  );
+  assert.equal(d.action, ACTIONS.IMPORT_FOREIGN_COVER);
+  assert.equal(d.potAccountId, 'pot-groceries');
+});
+
+test('undo of our own cover still drops on the pot side', () => {
+  const d = classify(
+    { description: 'Undo Cover to Spending', amount: 3136, upAccountId: 'groceries', transferAccountId: 'spending' },
+    MAP
+  );
+  assert.equal(d.action, ACTIONS.DROP);
+});

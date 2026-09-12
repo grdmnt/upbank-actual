@@ -118,7 +118,8 @@ async function addTransfer(fromAccountId, toAccountId, transaction) {
 /**
  * Candidate purchases a cover of `amount` could have paid for: same account,
  * matching absolute amount, inside the date window, not itself a cover/transfer
- * leg and not already absorbed onto a saver.
+ * leg or a foreign cover. Also used on the pot side to recognise a re-delivered
+ * cover whose purchase has already been moved.
  */
 async function findCoverCandidates({ accountId, amount, dateFrom, dateTo }) {
   await init();
@@ -135,7 +136,9 @@ async function findCoverCandidates({ accountId, amount, dateFrom, dateTo }) {
     if (t.starting_balance_flag) return false;
     if (Math.abs(t.amount) !== target) return false;
     const name = payeeName.get(t.payee) || '';
-    if (/^(cover|transfer) /i.test(name)) return false;
+    if (/^(undo cover|cover|transfer) /i.test(name)) return false;
+    // The other owner's covers live on the pot with an imported_id of their own
+    if (name === config.FOREIGN_COVER_PAYEE) return false;
     return true;
   });
 }

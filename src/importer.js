@@ -41,7 +41,7 @@ async function reconcileExisting(mapped, actual) {
  * shows up where the money actually came from. Falls back to a plain transfer
  * when no single purchase can be identified.
  */
-async function absorbCover({ mapped, ownAccountId, potAccountId }, { actual, config }) {
+async function absorbCover({ mapped, ownAccountId, potAccountId, potCategoryId }, { actual, config }) {
   const dateTo = mapped.date;
   const dateFrom = addDays(mapped.date, -config.ABSORB_WINDOW_DAYS);
 
@@ -53,13 +53,22 @@ async function absorbCover({ mapped, ownAccountId, potAccountId }, { actual, con
   });
 
   if (!candidates.length) {
+    // The cover leg itself is never written, so a re-delivered webhook cannot be
+    // recognised by imported_id. If a matching purchase already sits on the pot
+    // inside the window, this cover was absorbed before: do nothing.
+    const onPot = await actual.findCoverCandidates({ accountId: potAccountId, amount: mapped.amount, dateFrom, dateTo });
+    if (onPot.length) return { status: 'already-absorbed', purchaseId: onPot[0].id };
     return { status: 'no-match' };
   }
 
-  // Nearest purchase at or before the cover wins; ties are flagged, not guessed at silently.
-  const sorted = candidates.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  const purchase = sorted[0];
-  const ambiguous = candidates.length > 1;
+  // Prefer the purchase whose category matches the pot; among those (or all, if
+  // none match) the nearest at or before the cover wins. A single category match
+  // is trusted, anything else is flagged rather than guessed at silently.
+  const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const inCategory = potCategoryId ? candidates.filter((c) => c.category === potCategoryId) : [];
+  const pool = inCategory.length ? inCategory : candidates;
+  const purchase = [...pool].sort(byDateDesc)[0];
+  const ambiguous = inCategory.length === 1 ? false : candidates.length > 1;
 
   const fields = { account: potAccountId };
   if (ambiguous) {
@@ -129,8 +138,16 @@ async function handleUpTransaction(upInfo, deps = {}) {
       const existing = await reconcileExisting(mapped, actual);
       if (existing) return { action: decision.action, delivered: true, ...existing, note: 'cover leg already present' };
 
-      const outcome = await absorbCover({ mapped, ownAccountId, potAccountId: decision.potAccountId }, { actual, config });
-      if (outcome.status === 'absorbed') {
+      const outcome = await absorbCover(
+        {
+          mapped,
+          ownAccountId,
+          potAccountId: decision.potAccountId,
+          potCategoryId: config.POT_CATEGORY_MAP[decision.potUpAccountId],
+        },
+        { actual, config }
+      );
+      if (outcome.status === 'absorbed' || outcome.status === 'already-absorbed') {
         return { action: decision.action, delivered: true, ...outcome };
       }
 
