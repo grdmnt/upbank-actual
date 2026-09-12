@@ -7,6 +7,13 @@ const marvis = require('./marvis');
 
 validateConfig();
 
+// @actual-app/api rejects internal promises on some failures (e.g. a budget
+// whose migrations the client does not know). Node 22 would exit on those;
+// log them and keep the webhook up so nothing from Up is lost.
+process.on('unhandledRejection', (reason) => {
+  console.error('[process] unhandled rejection:', reason && reason.message ? reason.message : reason);
+});
+
 const app = express();
 
 // Webhook route: must use raw body to verify signature
