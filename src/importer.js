@@ -81,7 +81,10 @@ async function absorbCover({ mapped, ownAccountId, potAccountId, potCategoryId }
     purchaseId: purchase.id,
     movedTo: potAccountId,
     ambiguous,
-    candidates: candidates.length,
+    candidateCount: candidates.length,
+    // Enough for a human to pick between them, and to undo the move if wrong
+    candidates: candidates.map(({ id, date, amount, payee_name, category }) => ({ id, date, amount, payee_name, category })),
+    movedNotes: purchase.notes || null,
   };
 }
 
@@ -158,7 +161,15 @@ async function handleUpTransaction(upInfo, deps = {}) {
         ...withNote(rest, config.CHECK_COVER_NOTE),
         amount: -mapped.amount,
       });
-      return { action: 'ABSORB_FALLBACK_TRANSFER', delivered: true, from: decision.potAccountId, to: ownAccountId };
+      return {
+        action: 'ABSORB_FALLBACK_TRANSFER',
+        delivered: true,
+        from: decision.potAccountId,
+        to: ownAccountId,
+        coverImportedId: mapped.imported_id,
+        amount: mapped.amount,
+        date: mapped.date,
+      };
     }
 
     default:

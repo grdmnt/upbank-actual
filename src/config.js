@@ -43,6 +43,10 @@ const config = {
   // How many days back from a cover to look for the purchase it paid for
   ABSORB_WINDOW_DAYS: parseInt(process.env.ABSORB_WINDOW_DAYS || '14', 10),
 
+  // MARVIS on Telegram. Both unset = notifications disabled.
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
+
   // Import options
   AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.AMOUNT_FLIP || 'false'),
 };

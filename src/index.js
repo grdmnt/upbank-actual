@@ -3,6 +3,7 @@ const { config, validateConfig } = require('./config');
 const { verifySignature, fetchTransaction, mapUpToActualTransaction, fetchAccounts } = require('./up');
 const { listAccounts, shutdown } = require('./actual');
 const { handleUpTransaction } = require('./importer');
+const marvis = require('./marvis');
 
 validateConfig();
 
@@ -56,6 +57,7 @@ app.post('/webhook/up', express.raw({ type: ['application/json', 'application/*+
     const upTx = await fetchTransaction(txId);
     const upInfo = mapUpToActualTransaction(upTx);
     const result = await handleUpTransaction(upInfo);
+    await marvis.afterImport(result, upInfo);
 
     console.log(
       `[Up] processed tx=${txId} action=${result.action} delivered=${result.delivered}` +
@@ -101,11 +103,13 @@ app.get('/up/accounts', async (req, res) => {
 
 const server = app.listen(config.PORT, () => {
   console.log(`Up→Actual webhook listening on :${config.PORT}`);
+  marvis.init().catch((err) => console.error('[MARVIS] failed to start:', err));
 });
 
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
   server.close(async () => {
+    await marvis.stop();
     await shutdown();
     process.exit(0);
   });

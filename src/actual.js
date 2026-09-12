@@ -140,7 +140,21 @@ async function findCoverCandidates({ accountId, amount, dateFrom, dateTo }) {
     // The other owner's covers live on the pot with an imported_id of their own
     if (name === config.FOREIGN_COVER_PAYEE) return false;
     return true;
-  });
+  }).map((t) => ({ ...t, payee_name: payeeName.get(t.payee) || '' }));
+}
+
+async function deleteTransaction(id) {
+  await init();
+  return await actual.deleteTransaction(id);
+}
+
+/** Open, on-budget accounts with their current balance in cents. */
+async function getOnBudgetBalances() {
+  await init();
+  const accounts = await actual.getAccounts();
+  const open = accounts.filter((a) => !a.closed && !a.offbudget);
+  const balances = await Promise.all(open.map((a) => actual.getAccountBalance(a.id)));
+  return open.map((a, i) => ({ id: a.id, name: a.name, balance: balances[i] }));
 }
 
 module.exports = {
@@ -158,5 +172,7 @@ module.exports = {
   getTransferPayee,
   addTransfer,
   findCoverCandidates,
+  deleteTransaction,
+  getOnBudgetBalances,
   utils: actual.utils,
 };
