@@ -1,0 +1,26 @@
+
+services:
+  app:
+    build: .
+    container_name: upbank-actual
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8082:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - actual-data:/app/.actual-data
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    network_mode: "service:app"
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+
+volumes:
+  actual-data:
