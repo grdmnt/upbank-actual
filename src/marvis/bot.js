@@ -4,9 +4,10 @@
  * Long polling, so nothing new is exposed to the internet. With no
  * TELEGRAM_BOT_TOKEN the bot is a no-op and the importer runs exactly as before.
  *
- * A module is { commands: { name: { description, handler } }, callbacks: { prefix: handler } }.
+ * A module is { commands: { name: { description, handler } }, callbacks: { prefix: handler }, text? }.
  * A command handler returns { text, reply_markup? } or a string. A callback handler
  * receives the callback data and returns the same; the originating message is edited.
+ * `text` receives any plain message no command matched; the first module with one wins.
  */
 const { Bot } = require('grammy');
 const { voice } = require('./voice');
@@ -91,6 +92,18 @@ function createBot({ token, chatId, log = console }) {
       }
     },
     async start() {
+      // Registered last so commands and quick-keyboard labels match first
+      bot.on('message:text', async (ctx) => {
+        const handler = modules.map((m) => m.text).find(Boolean);
+        const text = ctx.message.text;
+        if (!handler || text.startsWith('/')) return;
+        try {
+          await reply(ctx, await handler(text));
+        } catch (err) {
+          log.error('[MARVIS] text handler failed:', err);
+          await reply(ctx, voice.failed());
+        }
+      });
       await bot.api.setMyCommands([
         ...commandList(),
         { command: 'help', description: 'What I can do' },

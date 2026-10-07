@@ -6,6 +6,7 @@ const { createBot } = require('./bot');
 const { createPendingStore } = require('./pending');
 const { createFinanceModule } = require('./modules/finance');
 const { createRepairModule } = require('./modules/repair');
+const { createAgentModule } = require('./modules/agent');
 const { createRepair } = require('../repair');
 const up = require('../up');
 const { handleUpTransaction } = require('../importer');
@@ -25,6 +26,7 @@ async function init() {
   bot.register(finance);
   const repair = createRepair({ up, actual, config, handle: (upInfo) => handleUpTransaction(upInfo), notify: afterImport });
   bot.register(createRepairModule({ repair, send: bot.send, config }));
+  if (config.AGENT_URL) bot.register(createAgentModule({ url: config.AGENT_URL, token: config.AGENT_TOKEN }));
   await bot.start();
 }
 

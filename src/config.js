@@ -51,6 +51,10 @@ const config = {
   REPAIR_SINCE: process.env.REPAIR_SINCE || '2026-07-22',
   MARVIS_DB_PATH: process.env.MARVIS_DB_PATH || path.resolve(process.cwd(), 'marvis.db'),
 
+  // Finance agent (the finance-agent service on the host). Unset = free text is ignored.
+  AGENT_URL: (process.env.AGENT_URL || '').replace(/\/$/, ''),
+  AGENT_TOKEN: process.env.AGENT_TOKEN || '',
+
   // Import options
   AMOUNT_FLIP: /^(1|true|yes)$/i.test(process.env.AMOUNT_FLIP || 'false'),
 };

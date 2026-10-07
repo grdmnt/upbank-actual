@@ -74,6 +74,27 @@ const voice = {
     `<b>Repair done.</b> Deleted ${s.deleted}, replayed ${s.replayed}.\n` +
     table(Object.entries(s.outcomes).map(([k, v]) => [k, String(v)])) +
     (s.errors.length ? `\n\n<b>${s.errors.length} errors</b>\n<code>${esc(s.errors.slice(0, 5).map((e) => `${e.step} ${e.id}: ${e.message}`).join('\n'))}</code>` : ''),
+  agentDown: () => 'The agent is not answering. Its service on the homelab may be down.',
+  agentNew: () => 'Fresh page. The agent has forgotten this conversation, though not your ledger.',
+  agentJobs: (jobs) => {
+    if (!jobs.length) return 'No scheduled jobs yet. Ask the agent for one in plain words.';
+    const when = (ms) =>
+      ms ? new Date(ms).toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+    return (
+      '<b>Scheduled jobs</b>\n' +
+      jobs
+        .map((j) =>
+          j.error
+            ? `• <b>${esc(j.name)}</b>: broken (${esc(j.error)})`
+            : `• <b>${esc(j.name)}</b> <code>${esc(j.schedule)}</code>${j.enabled ? `, next ${esc(when(j.nextRun))}` : ', paused'}`,
+        )
+        .join('\n')
+    );
+  },
+  agentApproval: ({ status, summary }) => {
+    const verdict = { allow: '✅ Approved', deny: '❌ Denied', stale: 'This request has expired or was already answered.' }[status] || esc(status);
+    return summary ? `${verdict}\n${esc(summary)}` : verdict;
+  },
   applyButton: () => 'Apply',
   cancelButton: () => 'Cancel',
   failed: () => 'That did not work. Check the logs.',
