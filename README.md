@@ -120,6 +120,8 @@ Webhook endpoint (configure this URL at Up):
 
 Ensure this service is reachable from the public internet (e.g., deployed server, reverse proxy, or a tunnel like Cloudflare Tunnel / ngrok). Up requires HTTPS; use a valid certificate.
 
+Running with Docker: `docker compose up -d --build` builds the image (Node 22, with build tools for `better-sqlite3`), reads `.env`, publishes the webhook on host port 8082 and keeps Actual's cache and `marvis.db` on the `actual-data` volume. If Actual runs on the same host, point `ACTUAL_SERVER_URL` at `http://host.docker.internal:5006`. Keep `@actual-app/api` on the same version as your Actual server: an older client fails to load a budget the server has migrated (`out-of-sync-migrations`).
+
 Notes for ngrok Free:
 - Start without auth: `ngrok http 8080` (do NOT enable basic auth). Up does not send Authorization headers; any auth at the edge causes 401.
 - Free URLs change on restart; update/recreate your Up webhook when the URL changes.
@@ -147,9 +149,11 @@ Up records a cover as three transactions: the purchase on Spending, `Cover from 
 
 ### MARVIS on Telegram
 
-Optional. When a cover cannot be settled by rules alone, MARVIS (Monty's Assistant for Routine, Very Important Stuff) sends a Telegram message with one button per candidate purchase. Tapping applies the answer to Actual: the chosen purchase moves onto the pot, a wrong guess moves back, a fallback transfer is deleted. Nothing else is automated and no AI is involved. `/now` shows on-budget balances and open questions, `/pending` re-sends them. `/repair` scans Up since `REPAIR_SINCE`, shows what the importer would change about rows written before cover handling existed (raw cover legs to delete, purchases to move, partner covers to re-import, transfers to link) and applies it on a button press. Balances are unchanged by construction and a second run finds nothing to do.
+Optional. When a cover cannot be settled by rules alone, MARVIS (Monty's Assistant for Routine, Very Important Stuff) sends a Telegram message with one button per candidate purchase. Tapping applies the answer to Actual: the chosen purchase moves onto the pot, a wrong guess moves back, a fallback transfer is deleted. Cover handling is rule-based; no AI is involved in it. `/now` shows on-budget balances and open questions, `/pending` re-sends them. `/repair` scans Up since `REPAIR_SINCE`, shows what the importer would change about rows written before cover handling existed (raw cover legs to delete, purchases to move, partner covers to re-import, transfers to link) and applies it on a button press. Balances are unchanged by construction and a second run finds nothing to do.
 
 Setup: create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`, message the bot and run `/whoami`, set `TELEGRAM_CHAT_ID`. The bot long-polls, so no inbound URL is needed. State lives in a SQLite file at `MARVIS_DB_PATH`: every question asked (resolved ones kept as an audit trail) and an `events` table with the outcome of every webhook. Mount a volume in production so it survives deploys; put `ACTUAL_DATA_DIR` on the same volume and Actual's cache survives too.
+
+With `AGENT_URL` and `AGENT_TOKEN` set, any plain message (not a command or button) is forwarded to a separate finance-agent service, which runs Claude against the budget and replies in the same chat. `/new` starts a fresh conversation with it, `/jobs` lists the reports it runs on a schedule, and when it wants to change something that needs approval it sends Approve/Deny buttons that MARVIS relays back. Unset, plain messages are ignored as before.
 
 Re-delivered webhooks are safe: every import is looked up by `imported_id` across all accounts first, and a cover whose purchase already sits on the pot is recognised and skipped. `npm run classify-up` prints what the importer would do for every Up transaction since `SINCE` without writing anything.
 
